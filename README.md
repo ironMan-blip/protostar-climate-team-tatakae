@@ -28,6 +28,31 @@ Forecasts of yearly weather for 210 U.S. cities, 2019–2025, made as of the end
 |---|---|---|
 | Mashrafi Mahmud Rafi | [@ironMan334](https://huggingface.co/ironMan334) | CSE |
 
+## Architecture
+
+```mermaid
+flowchart TD
+    A["HF dataset: CMU-OSPO/protostar-climate-train-to-2018<br/>annual_indices, 210 cities, up to 2018"] --> B["code/forecast.py: load + clean<br/>keep years with ≤ 10 missing days"]
+    B --> C["Neighbours: 32 nearest cities by lat/lon"]
+    C --> D["Regional warming rate<br/>mean 1979–2018 temp trend of neighbours"]
+    B --> E["Recent normal<br/>city 2009–2018 mean"]
+    B --> F["30-year normal<br/>city 1989–2018 mean"]
+    B --> G["CDD sensitivity<br/>extra CDD per +1 °F, fit 1989–2018"]
+    D --> T["annual_avg_temp = recent mean + rate × (year − 2013.5)"]
+    E --> T
+    D --> K["cdd = recent CDD + sensitivity × regional warming"]
+    E --> K
+    G --> K
+    F --> P["total_precip_in, hottest_day_temp = 30-year mean"]
+    T --> S["submission.csv<br/>210 cities × 2019–2025 × 4 metrics = 5,880 rows"]
+    K --> S
+    P --> S
+    B --> BT["Backtests at origins 1990, 1997, 2004, 2010, 2011<br/>vs 30-yr avg, last year, linear trend"]
+    BT --> BC["code/backtest.csv"]
+    S --> CH["code/check_submission.py: format check"]
+    CH --> HF["HF dataset repo → Space Submission tab → scored"]
+```
+
 ## Method
 
 **"Recent normal + regional warming"**: a transparent statistical forecast. We chose it because it beat every heavier model we tried in the backtests below.
