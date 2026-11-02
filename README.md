@@ -18,6 +18,8 @@ configs:
 
 **Negative result:** no
 
+**Hugging Face dataset (official submission):** [ironMan334/protostar-climate-team-tatakae](https://huggingface.co/datasets/ironMan334/protostar-climate-team-tatakae)
+
 Forecasts of yearly weather for 210 U.S. cities, 2019–2025, made as of the end of 2018 (no data that reveals 2019–2025 weather), for the [Protostar Challenge: Climate Risk Intelligence](https://huggingface.co/spaces/CMU-OSPO/protostar-challenge-climate-risk-intelligence).
 
 ## Team
