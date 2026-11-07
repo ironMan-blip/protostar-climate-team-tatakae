@@ -106,11 +106,6 @@ The errors (MAE) for each metric and all four forecasts (mine, 30-year average, 
   - Add a `station_id_in_use` column for each year, so people can find or fix station jumps.
   - Share the organisers' practice-run baseline numbers for every metric (not just CDD), so teams can check their whole pipeline.
 
-## AI Tools and Agents
-
-- **Claude Code (Anthropic, Claude model):** wrote and ran the backtest experiments for the "region + departure" view (replaying every start year 1985–2011 with data before that year only), added it to `code/forecast.py`, and updated this README. It used no 2019–2025 data, no live-leaderboard scores, and no numbers of its own as forecast inputs: every value comes from `annual_indices` up to 2018 through `code/forecast.py`.
-- **What I reviewed:** the code change, the backtest numbers in the table above, and that `python code/forecast.py` reproduces `submission.csv` without the agent.
-
 ## Files
 
 | File | What it has |
