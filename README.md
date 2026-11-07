@@ -62,21 +62,22 @@ I call it **"recent normal + regional warming"**. It is a simple statistical for
 - **The model:**
   - **Average temperature:** I take the city's 2009–2018 average. Then I add the *regional* warming rate times the number of years since 2013.5 (the middle of that 10-year window). The regional warming rate is the average 1979–2018 temperature trend of the city's 32 closest cities. The middle value is +0.52 °F per decade (range +0.33 to +0.63).
   - **Cooling degree days (CDD):** I take the city's 2009–2018 average CDD. Then I add the city's *CDD sensitivity* times the same regional warming. CDD sensitivity means "how many extra CDD the city gets for each +1 °F of yearly temperature", fitted on 1989–2018. This makes sense because CDD comes from temperature, and the shared regional temperature trend is much less noisy than one city's own CDD trend.
+  - **Second view, "region + departure" (75 % weight for temperature and CDD):** each year, a city's value = its region's anomaly (mean of its 32 nearest cities, each measured against its own 1989–2018 mean) + the city's *departure* from that region. The departure is much less noisy than the raw value, because weather shared across the region cancels out, so its last 5 years are enough to pin it down (this also follows station moves quickly). The region's anomaly is carried forward with a 1989–2018 trend line; CDD uses the same regional anomaly times the city's CDD sensitivity. The final forecast is 75 % this view + 25 % the first one. I chose this by replaying it from every start year 1985–2011 (data before that year only): on average it adds about +0.02 to temperature skill and +0.01 to CDD skill. It is not better in every window (see the table: 1997 got worse, 2004 better).
   - **Rain and the hottest day:** the city's 1989–2018 average.
 - **Inputs:** only `annual_indices` up to 2018, plus each station's latitude and longitude to find its neighbours. I only count a year if 10 or fewer days are missing. This is the same rule the challenge uses for scoring. I used no outside data.
 - **How I tested it:** I ran the exact same method at five points in the past. Each time it could only see the years before that point. The score uses the challenge formula (compared with the 30-year average):
 
 | Test years (start point) | Temp S | Precip S | Hot day S | CDD S | **Score: mine** | Score: linear trend |
 |---|---:|---:|---:|---:|---:|---:|
-| 1991–1997 (1990) | 0.048 | 0 | 0 | 0.031 | **2.0** | 0.0 |
-| 1998–2004 (1997) | 0.188 | 0 | 0 | 0.024 | **5.3** | 0.0 |
-| 2005–2011 (2004) | 0.157 | 0 | 0 | 0.101 | **6.5** | 0.0 |
-| 2011–2018 (2010, organisers' practice run) | 0.170 | 0 | 0 | 0.218 | **9.7** | 4.8 |
-| 2012–2018 (2011) | 0.152 | 0 | 0 | 0.221 | **9.3** | 2.2 |
+| 1991–1997 (1990) | 0.046 | 0 | 0 | 0.044 | **2.2** | 0.0 |
+| 1998–2004 (1997) | 0.144 | 0 | 0 | 0.015 | **4.0** | 0.0 |
+| 2005–2011 (2004) | 0.190 | 0 | 0 | 0.131 | **8.0** | 0.0 |
+| 2011–2018 (2010, organisers' practice run) | 0.162 | 0 | 0 | 0.225 | **9.7** | 4.8 |
+| 2012–2018 (2011) | 0.151 | 0 | 0 | 0.223 | **9.3** | 2.2 |
 
 The errors (MAE) for each metric and all four forecasts (mine, 30-year average, last year repeated, linear trend) are in `code/backtest.csv`. My model does better in later test windows, because warming speeds up over time. It beats the linear-trend baseline in every window.
 
-  In the organisers' practice run (data up to 2010, forecast 2011–2018), I get the exact same reference numbers they give: the 30-year average has a CDD error of **212.6 °F-days** and the trend line **176.9**. My model gets **166.2**. That beats the trend line by more than the 10 °F-day tie margin (level 2). For temperature, my error is 1.38 °F, against 1.66 for the 30-year average and 1.43 for the trend line.
+  In the organisers' practice run (data up to 2010, forecast 2011–2018), I get the exact same reference numbers they give: the 30-year average has a CDD error of **212.6 °F-days** and the trend line **176.9**. My model gets **164.7**. That beats the trend line by more than the 10 °F-day tie margin (level 2). For temperature, my error is 1.39 °F, against 1.66 for the 30-year average and 1.43 for the trend line.
 
 **What I learned (and why the model is so simple).** I tested more than 100 versions: recent 5/10/15/20-year averages, 30/40/50-year trends, medians (MAE rewards medians), one city alone vs. 4/8/16/32/210 neighbours, and a pooled Huber regression with all of these.
 1. **Averaging over neighbours wins.** One city's trend is mostly noise from its station. The more cities I averaged, the better the forecast, up to about 32.
