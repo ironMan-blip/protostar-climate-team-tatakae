@@ -37,6 +37,8 @@ MAX_MISSING = 10      # the challenge scores a year only if <= 10 days are missi
 RECENT = 10           # years in the "recent normal"
 TREND_YEARS = 40      # window for each city's warming trend
 NEIGHBOURS = 32       # cities pooled into the regional warming rate (incl. the city itself)
+DEPARTURE = 5        # years used for a city's departure from its region (second view)
+BLEND = 0.75          # weight of the "region + departure" view
 ROOT = Path(__file__).resolve().parent.parent
 
 warnings.simplefilter("ignore", RuntimeWarning)  # nanmean over all-missing rows -> NaN, handled below
@@ -119,6 +121,25 @@ def forecast(pan, nearest, T, years):
     c10 = fill(c10, m30["cdd"])
     c_centre = fill(c_centre, T - 14.5)
     out["cdd"] = np.clip(c10[:, None] + (sens * regional_warming)[:, None] * (years - c_centre[:, None]), 0, None)
+
+    # Second view, "region + departure": city = regional anomaly R(y) + the city's departure from it.
+    # The departure (city minus neighbour mean) is far less noisy than the raw value, so 5 years
+    # pin it down (and track station moves); R gets a 30-year trend line. Blend 75/25 with the
+    # first view; chosen by backtests at every origin 1985-2011, never on 2019+ data.
+    tv, yrs = window(temp, T, 30)
+    t_ref = np.nanmean(tv, 1)
+    ta = tv - t_ref[:, None]
+    R = np.nanmean(ta[nearest], 1)                                   # cities x years
+    x = np.broadcast_to(yrs, R.shape)
+    x_mid = np.nanmean(np.where(np.isfinite(R), x, np.nan), 1)
+    R_hat = np.nanmean(R, 1)[:, None] + regression_slope(x, R)[:, None] * (years - x_mid[:, None])
+    t_dep = fill(np.nanmean((ta - R)[:, -DEPARTURE:], 1), 0.0)
+    region_temp = fill(t_ref, m30["annual_avg_temp"])[:, None] + t_dep[:, None] + R_hat
+    c_ref = np.nanmean(cv, 1)
+    c_dep = fill(np.nanmean((cv - c_ref[:, None] - sens[:, None] * R)[:, -DEPARTURE:], 1), 0.0)
+    region_cdd = np.clip(fill(c_ref, m30["cdd"])[:, None] + c_dep[:, None] + sens[:, None] * R_hat, 0, None)
+    out["annual_avg_temp"] = BLEND * region_temp + (1 - BLEND) * out["annual_avg_temp"]
+    out["cdd"] = BLEND * region_cdd + (1 - BLEND) * out["cdd"]
 
     for code in ("total_precip_in", "hottest_day_temp"):
         out[code] = np.repeat(m30[code][:, None], len(years), axis=1)
