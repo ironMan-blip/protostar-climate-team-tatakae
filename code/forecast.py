@@ -1,6 +1,6 @@
 """Forecast yearly weather for 210 U.S. cities, 2019-2025, using only data up to 2018-12-31.
 
-Method ("recent normal + regional warming"):
+Method ("recent normal + regional warming", plus a daily-shape CDD view, see forecast()):
   annual_avg_temp   = city's last-10-year mean + regional warming rate x years since the
                       middle of that 10-year window. Regional warming rate = average 40-year
                       temperature trend of the city's 32 nearest cities (pooling cancels
@@ -39,19 +39,45 @@ TREND_YEARS = 40      # window for each city's warming trend
 NEIGHBOURS = 32       # cities pooled into the regional warming rate (incl. the city itself)
 DEPARTURE = 5        # years used for a city's departure from its region (second view)
 BLEND = 0.75          # weight of the "region + departure" view
+DELTA_YEARS = 10      # base years whose daily spread feeds the daily-shape CDD (third view)
+DELTA_BLEND = 0.5     # weight of that CDD view
 ROOT = Path(__file__).resolve().parent.parent
 
 warnings.simplefilter("ignore", RuntimeWarning)  # nanmean over all-missing rows -> NaN, handled below
 
 
-def load(data_dir):
+def load(data_dir, subset="annual_indices"):
     if data_dir is None:
         from huggingface_hub import hf_hub_download
-        path = hf_hub_download(REPO, "annual_indices/train-00000-of-00001.parquet", repo_type="dataset")
+        path = hf_hub_download(REPO, f"{subset}/train-00000-of-00001.parquet", repo_type="dataset")
     else:
-        path = Path(data_dir) / "annual_indices.parquet"
+        path = Path(data_dir) / f"{subset}.parquet"
+    if subset == "daily":
+        d = pd.read_parquet(path, columns=["ID", "Date", "tmax", "tmin"])
+        d["Date"] = pd.to_datetime(d["Date"])
+        assert d["Date"].max() <= pd.Timestamp(f"{LAST_YEAR}-12-31"), "daily data must stop at 2018-12-31"
+        return d
     annual = pd.read_parquet(path)
     return annual[annual["Year"] <= LAST_YEAR]  # data rule: nothing after 2018-12-31
+
+
+def daily_shapes(daily):
+    """(city, year) -> that year's daily mean temperatures minus their annual mean (the 'shape')."""
+    d = daily.assign(Y=daily["Date"].dt.year, t=(daily["tmax"] + daily["tmin"]) / 2).dropna(subset=["t"])
+    return {k: t - t.mean() for k, t in ((k, g.to_numpy()) for k, g in d.groupby(["ID", "Y"])["t"])}
+
+
+def delta_cdd(shapes, ids, temp, T, temp_forecast):
+    """CDD each year would have had at the forecast annual temperature, averaged over the city's
+    last DELTA_YEARS valid years: keeps the city's real daily spread, so CDD's bend near 65 °F is exact."""
+    tv, base = window(temp, T, DELTA_YEARS)
+    out = np.full(temp_forecast.shape, np.nan)
+    for c, city in enumerate(ids):
+        est = [np.maximum(0, s[:, None] + temp_forecast[c] - 65).sum(0) * 365.25 / len(s)
+               for s in (shapes.get((city, int(b))) for b in base[np.isfinite(tv[c])]) if s is not None]
+        if est:
+            out[c] = np.mean(est, 0)
+    return out
 
 
 def panels(annual):
@@ -95,7 +121,7 @@ def fill(a, fallback):
     return np.where(np.isfinite(a), a, fallback)
 
 
-def forecast(pan, nearest, T, years):
+def forecast(pan, nearest, T, years, shapes=None):
     """metric -> array (cities x len(years)) of forecasts made with data up to year T only."""
     years = np.asarray(years, dtype=float)
     temp, cdd = pan["annual_avg_temp"], pan["cdd"]
@@ -141,6 +167,12 @@ def forecast(pan, nearest, T, years):
     out["annual_avg_temp"] = BLEND * region_temp + (1 - BLEND) * out["annual_avg_temp"]
     out["cdd"] = BLEND * region_cdd + (1 - BLEND) * out["cdd"]
 
+    # Third view for CDD: shift each of the last 10 valid years' daily temperatures to the forecast
+    # annual temperature and recount CDD. Blend 50/50; +0.004 CDD skill over origins 1985-2011.
+    if shapes is not None:
+        dc = delta_cdd(shapes, pan["cdd"].index, temp, T, out["annual_avg_temp"])
+        out["cdd"] = np.where(np.isfinite(dc), DELTA_BLEND * dc + (1 - DELTA_BLEND) * out["cdd"], out["cdd"])
+
     for code in ("total_precip_in", "hottest_day_temp"):
         out[code] = np.repeat(m30[code][:, None], len(years), axis=1)
     # NaN only where a city has no valid year in its 30-year window (a few cities at early
@@ -161,9 +193,9 @@ def baselines(p, T, years):
             "linear_trend": trend}
 
 
-def backtest(pan, nearest, T, horizon=7):
+def backtest(pan, nearest, shapes, T, horizon=7):
     years = list(range(T + 1, T + 1 + horizon))
-    pred = forecast(pan, nearest, T, years)
+    pred = forecast(pan, nearest, T, years, shapes)
     rows = []
     for code, p in pan.items():
         actual = p.reindex(columns=years).values
@@ -181,15 +213,16 @@ def backtest(pan, nearest, T, horizon=7):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default=None, help="folder with annual_indices.parquet (default: download)")
+    ap.add_argument("--data", default=None, help="folder with annual_indices.parquet and daily.parquet (default: download)")
     args = ap.parse_args()
 
     pan, nearest = panels(load(args.data))
+    shapes = daily_shapes(load(args.data, "daily"))
     ids = pan["cdd"].index
 
     # practice runs: same code, earlier origins; the organisers' own run is 2010 -> 2011-2018
-    bt = pd.concat([backtest(pan, nearest, 2010, horizon=8)] +
-                   [backtest(pan, nearest, T) for T in (1990, 1997, 2004, 2011)], ignore_index=True)
+    bt = pd.concat([backtest(pan, nearest, shapes, 2010, horizon=8)] +
+                   [backtest(pan, nearest, shapes, T) for T in (1990, 1997, 2004, 2011)], ignore_index=True)
     bt.to_csv(ROOT / "code" / "backtest.csv", index=False)
     pd.set_option("display.width", 220, "display.max_columns", 20)
     print(bt.to_string(index=False))
@@ -198,7 +231,7 @@ def main():
               f"linear trend {100 * max(0, g['S_linear_trend'].mean()):.1f}")
 
     years = list(range(LAST_YEAR + 1, LAST_YEAR + 8))
-    pred = forecast(pan, nearest, LAST_YEAR, years)
+    pred = forecast(pan, nearest, LAST_YEAR, years, shapes)
     long = pd.concat([pd.DataFrame(a, index=ids, columns=years).stack().rename("predicted_value")
                       .rename_axis(["city_id", "year"]).reset_index().assign(metric=code)
                       for code, a in pred.items()], ignore_index=True)
