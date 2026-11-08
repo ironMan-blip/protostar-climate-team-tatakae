@@ -1,11 +1,11 @@
 """Forecast yearly weather for 210 U.S. cities, 2019-2025, using only data up to 2018-12-31.
 
 Method ("recent normal + regional warming", plus a daily-shape CDD view, see forecast()):
-  annual_avg_temp   = city's last-10-year mean + regional warming rate x years since the
-                      middle of that 10-year window. Regional warming rate = average 40-year
+  annual_avg_temp   = city's last-15-year mean + regional warming rate x years since the
+                      middle of that 15-year window. Regional warming rate = average 40-year
                       temperature trend of the city's 32 nearest cities (pooling cancels
                       station noise; single-city trends are too noisy to extrapolate).
-  cdd               = city's last-10-year mean CDD + (city's CDD-per-degree sensitivity,
+  cdd               = city's last-15-year mean CDD + (city's CDD-per-degree sensitivity,
                       fitted over the last 30 years) x the same regional warming.
   total_precip_in,  = city's 30-year mean (1989-2018). Every recent-mean, trend, median and
   hottest_day_temp    pooled-regression variant we backtested failed to beat it reliably.
@@ -34,7 +34,7 @@ METRICS = {  # challenge code -> annual_indices column, missing-day columns that
 }
 LAST_YEAR = 2018
 MAX_MISSING = 10      # the challenge scores a year only if <= 10 days are missing
-RECENT = 10           # years in the "recent normal"
+RECENT = 15           # years in the "recent normal" (15 beat 10 by +0.006 temp skill, origins 1985-2011)
 TREND_YEARS = 40      # window for each city's warming trend
 NEIGHBOURS = 32       # cities pooled into the regional warming rate (incl. the city itself)
 DEPARTURE = 5        # years used for a city's departure from its region (second view)
