@@ -7,8 +7,9 @@ Method ("recent normal + regional warming", plus a daily-shape CDD view, see for
                       station noise; single-city trends are too noisy to extrapolate).
   cdd               = city's last-15-year mean CDD + (city's CDD-per-degree sensitivity,
                       fitted over the last 30 years) x the same regional warming.
-  total_precip_in,  = city's 30-year mean (1989-2018). Every recent-mean, trend, median and
-  hottest_day_temp    pooled-regression variant we backtested failed to beat it reliably.
+  total_precip_in,  = city's 30-year mean (1989-2018), nudged by 30 % of the city's last-10-year
+  hottest_day_temp    departure from its neighbours. Every recent-mean, trend, median and
+                      pooled-regression variant we backtested failed to beat the plain mean.
 Only valid years (<= 10 missing days, the challenge's scoring rule) enter any statistic.
 Choices were made by replaying the method at past origins (1990, 1997, 2004, 2010, 2011),
 each time using only the years before the origin.
@@ -41,6 +42,8 @@ DEPARTURE = 5        # years used for a city's departure from its region (second
 BLEND = 0.75          # weight of the "region + departure" view
 DELTA_YEARS = 10      # base years whose daily spread feeds the daily-shape CDD (third view)
 DELTA_BLEND = 0.5     # weight of that CDD view
+NUDGE = 0.3           # share of the recent departure from neighbours added to rain / hottest day
+NUDGE_YEARS = 10      # years in that departure
 ROOT = Path(__file__).resolve().parent.parent
 
 warnings.simplefilter("ignore", RuntimeWarning)  # nanmean over all-missing rows -> NaN, handled below
@@ -173,8 +176,16 @@ def forecast(pan, nearest, T, years, shapes=None):
         dc = delta_cdd(shapes, pan["cdd"].index, temp, T, out["annual_avg_temp"])
         out["cdd"] = np.where(np.isfinite(dc), DELTA_BLEND * dc + (1 - DELTA_BLEND) * out["cdd"], out["cdd"])
 
-    for code in ("total_precip_in", "hottest_day_temp"):
-        out[code] = np.repeat(m30[code][:, None], len(years), axis=1)
+    # Rain and hottest day: 30-year mean, nudged by NUDGE x the city's mean departure from its
+    # neighbours (excluding itself) over the last NUDGE_YEARS years, which tracks station moves.
+    # Rain works in log space (a ratio). Won 93 % (hot day) / 70 % (rain) of origins 1985-2011.
+    for code, log in (("hottest_day_temp", False), ("total_precip_in", True)):
+        v, _ = window(pan[code], T, 30)
+        a = np.log(np.maximum(v, 0.1)) if log else v
+        a = a - np.nanmean(a, 1, keepdims=True)
+        dep = fill(np.nanmean((a - np.nanmean(a[nearest[:, 1:]], 1))[:, -NUDGE_YEARS:], 1), 0.0)
+        nudged = m30[code] * np.exp(NUDGE * dep) if log else m30[code] + NUDGE * dep
+        out[code] = np.repeat(nudged[:, None], len(years), axis=1)
     # NaN only where a city has no valid year in its 30-year window (a few cities at early
     # backtest origins, never at 2018); those rows have no baseline and are not scored
     return out
